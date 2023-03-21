@@ -377,7 +377,14 @@ class NeoXArgsModel(NeoXArgsTemplate):
     """
 
     no_weight_decay_params: list = field(default_factory=lambda: ["bias", "l_ff", "l_v", "l_k"])
+    """
+    Which parameters we won't apply weight decay to
+    """
 
+    load_module_strict: bool = True
+    """
+    Whether to strictly enforce that the keys in state_dict of module & checkpoint match.
+    """
 
 @dataclass
 class NeoXArgsOptimizer(NeoXArgsTemplate):
