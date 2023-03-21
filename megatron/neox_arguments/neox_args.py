@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 try:
     from .template import NeoXArgsTemplate
@@ -375,6 +375,8 @@ class NeoXArgsModel(NeoXArgsTemplate):
     """
     Default class to use for linear column layer parallelism
     """
+
+    no_weight_decay_params: list = field(default_factory=lambda: ["bias", "l_ff", "l_v", "l_k"])
 
 
 @dataclass
