@@ -664,8 +664,15 @@ class ParallelSelfAttentionIA3(ParallelSelfAttention):
         (query_layer, key_layer, value_layer) = mpu.split_tensor_along_last_dim(
             mixed_x_layer, 3
         )
-        # Apply IA3 rescaling to keys & values:
+
         def _apply_ia3_rescaling(layer, scale_vector):
+            """Apply IA3 rescaling:
+
+            Reshapes: [sq, b, np, hn] -> [sq, b, np * hn] to perform
+            rescaling and then back to [sq, b, np, hn].
+
+            Note: np * hn == h/p == self.hidden_size_per_partition
+            """
             layer_size  = layer.shape
             layer = layer.reshape(layer_size[0], layer_size[1], -1)
             layer *= scale_vector
