@@ -637,7 +637,6 @@ class ParallelSelfAttentionIA3(ParallelSelfAttention):
                 )
             param.model_parallel = True
             param.partition_dim = 0
-            #param.stride = stride
             # Always initialize to ones.
             with torch.no_grad():
                 torch.nn.init.ones_(param)

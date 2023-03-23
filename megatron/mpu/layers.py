@@ -606,7 +606,6 @@ class ColumnParallelLinearIA3(ColumnParallelLinear):
                 )
             self.l_ff.model_parallel = True
             self.l_ff.partition_dim = 0
-            self.l_ff.stride = stride
             # Always initialize l_ff to ones.
             with torch.no_grad():
                 torch.nn.init.ones_(self.l_ff)
