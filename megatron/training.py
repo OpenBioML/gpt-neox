@@ -425,6 +425,7 @@ def get_model(neox_args, use_cache=False):
     trainable_params = sum(
             p.numel() for p in model.parameters() if p.requires_grad
             )
+    # Note: only for current partition
     print(f"Number of trainable parameters: {trainable_params}")
 
     if not neox_args.is_pipe_parallel:
