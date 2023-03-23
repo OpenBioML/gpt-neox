@@ -386,7 +386,7 @@ def get_model(neox_args, use_cache=False):
     old_use_mup = neox_args.use_mup
     neox_args.use_mup = False
     if neox_args.ia3_tuning:
-        neox_args.mlp_column_parallel_cls = "ColumnParallelLinearIA3"
+        neox_args.parallel_mlp_cls = "ParallelMLPIA3"
         neox_args.self_attention_cls = "ParallelSelfAttentionIA3"
 
     model = GPT2ModelPipe(

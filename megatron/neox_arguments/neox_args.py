@@ -371,9 +371,9 @@ class NeoXArgsModel(NeoXArgsTemplate):
     Default class to use for self attention
     """
 
-    mlp_column_parallel_cls: str = "ColumnParallelLinear"
+    parallel_mlp_cls: str = "ParallelMLP"
     """
-    Default class to use for linear column layer parallelism
+    Default class to use for linear MLP parallelism
     """
 
     no_weight_decay_params: list = field(default_factory=lambda: ["bias", "l_ff", "l_v", "l_k"])

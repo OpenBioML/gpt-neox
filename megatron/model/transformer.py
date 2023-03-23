@@ -89,22 +89,21 @@ class ParallelMLP(nn.Module):
 
         # auto scale so geglu has equal parameters
         ff_mult = 4 * 2 / 3 if self.activation_type == "geglu" else 4
-        ff_dim = (
+        self.ff_dim = (
             int(ff_mult * neox_args.hidden_size) * 2
             if self.activation_type == "geglu"
             else ff_mult * neox_args.hidden_size
         )
-        mlp_column_parallel_cls = getattr(mpu, neox_args.mlp_column_parallel_cls)
 
-        self.dense_h_to_4h = mlp_column_parallel_cls(
+        self.dense_h_to_4h = mpu.ColumnParallelLinear(
             neox_args=neox_args,
             input_size=neox_args.hidden_size,
-            output_size=ff_dim,
+            output_size=self.ff_dim,
             gather_output=False,
             init_method=init_method,
             skip_bias_add=True,
         )
-        ff_dim_in = ff_dim // 2 if self.activation_type == "geglu" else ff_dim
+        ff_dim_in = self.ff_dim // 2 if self.activation_type == "geglu" else self.ff_dim
         # Project back to h.
         self.dense_4h_to_h = mpu.RowParallelLinear(
             neox_args=neox_args,
@@ -131,6 +130,56 @@ class ParallelMLP(nn.Module):
             intermediate_parallel = self.activation_func(
                 intermediate_parallel + bias_parallel
             )
+
+        # [s, b, h]
+        output, output_bias = self.dense_4h_to_h(intermediate_parallel)
+        return output, output_bias
+
+
+class ParallelMLPIA3(ParallelMLP):
+    """MLP.
+
+    MLP will take the input with h hidden state, project it to 4*h
+    hidden dimension, perform nonlinear transformation, and project the
+    state back into h hidden dimension. At the end, dropout is also
+    applied.
+
+    Applies IA3 rescaling of each column after non-linearity:
+    https://arxiv.org/pdf/2205.05638.pdf
+    """
+
+    def __init__(
+        self, neox_args, init_method, output_layer_init_method, parallel_output=False
+    ):
+        super().__init__(
+                neox_args,
+                init_method=init_method,
+                output_layer_init_method=output_layer_init_method,
+                parallel_output=parallel_output
+            )
+
+        world_size = mpu.get_model_parallel_world_size()
+        self.hidden_size_per_partition = mpu.divide(self.ff_dim, world_size)  # 4hp
+        self.l_ff = create_ia3_parameter(self.hidden_size_per_partition, neox_args)
+
+    def forward(self, hidden_states):
+
+        # [s, b, 4hp]
+        intermediate_parallel, bias_parallel = self.dense_h_to_4h(hidden_states)
+
+        if (
+            self.activation_type == "gelu" and self.bias_gelu_fusion
+        ) or self.activation_type == "geglu":
+            intermediate_parallel = self.activation_func(
+                intermediate_parallel, bias_parallel
+            )
+        else:
+            intermediate_parallel = self.activation_func(
+                intermediate_parallel + bias_parallel
+            )
+
+        # Apply IA3 rescaling:
+        intermediate_parallel *= self.l_ff
 
         # [s, b, h]
         output, output_bias = self.dense_4h_to_h(intermediate_parallel)
@@ -594,6 +643,9 @@ class ParallelSelfAttention(nn.Module):
 
 
 class ParallelSelfAttentionIA3(ParallelSelfAttention):
+    """Applies IA3 rescaling to key and query vectors per:
+    https://arxiv.org/pdf/2205.05638.pdf
+    """
     def __init__(
         self,
         neox_args,
@@ -617,30 +669,9 @@ class ParallelSelfAttentionIA3(ParallelSelfAttention):
             use_cache=use_cache,
             parallel_output=parallel_output,
         )
-        self.l_k = self._create_ia3_parameter(neox_args)
-        self.l_v = self._create_ia3_parameter(neox_args)
+        self.l_k = create_ia3_parameter(self.hidden_size_per_partition, neox_args)
+        self.l_v = create_ia3_parameter(self.hidden_size_per_partition, neox_args)
 
-    def _create_ia3_parameter(self, neox_args):
-        if neox_args.use_cpu_initialization:
-            param = torch.nn.Parameter(
-                torch.empty(
-                        self.hidden_size_per_partition, dtype=neox_args.params_dtype
-                    )
-                )
-        else:
-            param = torch.nn.Parameter(
-                torch.empty(
-                        self.hidden_size_per_partition,
-                        device=torch.cuda.current_device(),
-                        dtype=neox_args.params_dtype,
-                    )
-                )
-            param.model_parallel = True
-            param.partition_dim = 0
-            # Always initialize to ones.
-            with torch.no_grad():
-                torch.nn.init.ones_(param)
-        return param
 
     def forward(self, hidden_states, attention_mask, layer_past=None):
 
@@ -815,7 +846,8 @@ class ParallelTransformerLayer(nn.Module):
         self.post_attention_layernorm = norm(neox_args.hidden_size, eps=eps)
 
         # MLP
-        self.mlp = ParallelMLP(
+        parallel_mlp_cls = getattr(sys.modules[__name__], neox_args.parallel_mlp_cls)
+        self.mlp = parallel_mlp_cls(
             neox_args=neox_args,
             init_method=init_method,
             output_layer_init_method=output_layer_init_method,
@@ -974,3 +1006,29 @@ def parallel_lm_logits(input_, word_embeddings_weight, parallel_output, bias=Non
         return logits_parallel
 
     return mpu.gather_from_model_parallel_region(logits_parallel)
+
+
+def create_ia3_parameter(param_size, neox_args):
+    """Create a parameter vector for use in IA3 scaling, per:
+    https://arxiv.org/pdf/2205.05638.pdf
+    """
+    if neox_args.use_cpu_initialization:
+        param = torch.nn.Parameter(
+            torch.empty(
+                    param_size, dtype=neox_args.params_dtype
+                )
+            )
+    else:
+        param = torch.nn.Parameter(
+            torch.empty(
+                    param_size,
+                    device=torch.cuda.current_device(),
+                    dtype=neox_args.params_dtype,
+                )
+            )
+        param.model_parallel = True
+        param.partition_dim = 0
+        # Always initialize to ones.
+        with torch.no_grad():
+            torch.nn.init.ones_(param)
+    return param
