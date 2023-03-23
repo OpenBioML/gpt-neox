@@ -50,6 +50,9 @@ class Embedding(torch.nn.Module):
         self.hidden_size = hidden_size
         self.init_method = init_method
         self.num_tokentypes = num_tokentypes
+        self.use_mup = neox_args.use_mup
+        self.mup_embedding_mult = neox_args.mup_embedding_mult
+        self.mup_rp_embedding_mult = neox_args.mup_rp_embedding_mult
 
         # Word embeddings (parallel).
         self.word_embeddings = mpu.VocabParallelEmbedding(
@@ -139,6 +142,7 @@ class Embedding(torch.nn.Module):
                 # OPT always adds 2 for some reason, according to the HF implementation
                 position_ids = position_ids + self.opt_pos_emb_offset
             position_embeddings = self.position_embeddings(position_ids)
+            position_embeddings.mul_(self.mup_rp_embedding_mult)
             embeddings = words_embeddings + position_embeddings
         else:
             embeddings = words_embeddings
@@ -150,6 +154,11 @@ class Embedding(torch.nn.Module):
 
         # Dropout.
         embeddings = self.embedding_dropout(embeddings)
+
+        if self.use_mup:
+            with torch.no_grad():
+                embeddings.mul_(self.mup_embedding_mult)
+
         return embeddings
 
 
@@ -185,10 +194,11 @@ class SoftEmbedding(torch.nn.Module):
         super(SoftEmbedding, self).__init__()
         self.n_tokens = n_tokens
         self.neox_args = neox_args
-        self.init_range = init_range
+        self.random_range = init_range
         self.init_string = init_string
+        self.embedding_module = wte
         self.soft_embedding_weight = torch.nn.parameter.Parameter(
-            self.initialize_embedding(wte)
+            self.initialize_embedding()
         )
 
     def initialize_embedding(self):
@@ -204,7 +214,7 @@ class SoftEmbedding(torch.nn.Module):
                     : self.n_tokens, :
                 ]  # pad up to n_tokens
             return embeds
-        return torch.Tensor(n_tokens, neox_args.hidden_size).uniform_(
+        return torch.Tensor(self.n_tokens, self.neox_args.hidden_size).uniform_(
             -self.random_range, self.random_range
         )
 
