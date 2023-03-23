@@ -27,6 +27,6 @@
   "use_wandb": True,
   "wandb_host": "https://api.wandb.ai",
   "wandb_project": "neox",
-  "num_gpus": 1,
-  "ia3_prompt_tuning": True
+  #"num_gpus": 4,
+  "ia3_tuning": True
 }

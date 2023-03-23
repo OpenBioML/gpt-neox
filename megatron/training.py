@@ -385,7 +385,7 @@ def get_model(neox_args, use_cache=False):
     # If mup isn't being used anyways, this has no effect.
     old_use_mup = neox_args.use_mup
     neox_args.use_mup = False
-    if neox_args.ia3_prompt_tuning:
+    if neox_args.ia3_tuning:
         neox_args.mlp_column_parallel_cls = "ColumnParallelLinearIA3"
         neox_args.self_attention_cls = "ParallelSelfAttentionIA3"
 
@@ -416,7 +416,7 @@ def get_model(neox_args, use_cache=False):
         for name, param in model.named_parameters():
             if not "soft_embedding" in name:
                 param.requires_grad = False
-    elif neox_args.ia3_prompt_tuning:
+    elif neox_args.ia3_tuning:
         layers_to_train = ["l_ff", "l_k", "l_v"]
         for name, param in model.named_parameters():
             if not any([x in name for x in layers_to_train]):

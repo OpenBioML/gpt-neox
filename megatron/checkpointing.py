@@ -227,7 +227,7 @@ def load_checkpoint(
 ):
     """Load a model checkpoint and return the iteration."""
     if neox_args.deepspeed:
-        if neox_args.ia3_prompt_tuning:
+        if neox_args.ia3_tuning:
             neox_args.load_module_strict = False
         load_optim_and_scheduler = (
             not neox_args.no_load_optim

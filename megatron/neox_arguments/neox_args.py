@@ -355,9 +355,9 @@ class NeoXArgsModel(NeoXArgsTemplate):
     """
 
     output_layer_parallelism: Literal["row", "column"] = "row"
-    ia3_prompt_tuning: bool = False
+    ia3_tuning: bool = False
     """
-    Run IA3 prompt tuning based off:
+    Run IA3 tuning based off:
     Few-Shot Parameter-Efficient Fine-Tuning is Better and Cheaper than In-Context Learning
     https://arxiv.org/pdf/2205.05638.pdf
     """
