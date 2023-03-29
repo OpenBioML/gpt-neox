@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 try:
     from .template import NeoXArgsTemplate
@@ -355,11 +355,36 @@ class NeoXArgsModel(NeoXArgsTemplate):
     """
 
     output_layer_parallelism: Literal["row", "column"] = "row"
+    ia3_tuning: bool = False
+    """
+    Run IA3 tuning based off:
+    Few-Shot Parameter-Efficient Fine-Tuning is Better and Cheaper than In-Context Learning
+    https://arxiv.org/pdf/2205.05638.pdf
+    """
 
     """
     Parameter controlling whether the output layer is parallelized over the hidden dim (row) or the vocab dim (column)
     """
 
+    self_attention_cls: str = "ParallelSelfAttention"
+    """
+    Default class to use for self attention
+    """
+
+    parallel_mlp_cls: str = "ParallelMLP"
+    """
+    Default class to use for linear MLP parallelism
+    """
+
+    no_weight_decay_params: list = field(default_factory=lambda: ["bias", "l_ff", "l_v", "l_k"])
+    """
+    Which parameters we won't apply weight decay to
+    """
+
+    load_module_strict: bool = True
+    """
+    Whether to strictly enforce that the keys in state_dict of module & checkpoint match.
+    """
 
 @dataclass
 class NeoXArgsOptimizer(NeoXArgsTemplate):
